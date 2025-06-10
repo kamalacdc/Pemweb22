@@ -73,24 +73,65 @@ class Books extends BaseController
     public function create()
     {
         $data = [
-            'title' => 'Form Tambah Buku'
+            'title' => 'Form Tambah Buku',
+            'validation' => \config\Services::validation(),
         ];
         return view('books/create', $data);
     }
 
-    public function save()
-    {
-        $slug = url_title($this->request->getVar('judul'), '-', true);
+   public function save()
+{
+    // Definisi aturan validasi
+    $rules = [
+        'judul' => 'required|is_unique[books.judul]',
+        'penulis' => 'required',
+        'penerbit' => 'required',
+        'sampul' => 'uploaded[sampul]|max_size[sampul,2048]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]'
 
-        $this->bukuModel->save([
-            'judul' => $this->request->getVar('judul'),
-            'slug' => $slug,
-            'penulis' => $this->request->getVar('penulis'),
-            'penerbit' => $this->request->getVar('penerbit'),
-            'sampul' => $this->request->getVar('sampul') ?: 'default.jpg'
-        ]);
+    ];
 
-        return redirect()->to('/books/' . $slug);
+    // Validasi input
+    if (!$this->validate($rules)) {
+        // Tangani kesalahan validasi khusus untuk judul yang sudah ada
+        if ($this->validator->hasError('judul')) {
+            session()->setFlashdata('error', 'Judul buku "' . $this->request->getVar('judul') . '" sudah ada dalam database!');
+            return redirect()->to('/books');
+        }
+
+        // Tangani error validasi umum lainnya
+        return redirect()->to('/books/create')->withInput()->with('validation', $this->validator);
     }
 
+    // Pembuatan slug berdasarkan judul
+    $slug = url_title($this->request->getVar('judul'), '-', true);
+
+    // Mengelola file sampul
+    $fileSampul = $this->request->getFile('sampul');
+    if ($fileSampul->isValid() && !$fileSampul->hasMoved()) {
+        $namaFile = $fileSampul->getRandomName();
+        $fileSampul->move('img', $namaFile);
+    } else {
+        $namaFile = 'default.jpg';
+    }
+
+    // Data yang akan disimpan ke database
+    $data = [
+        'judul' => $this->request->getVar('judul'),
+        'slug' => $slug,
+        'penulis' => $this->request->getVar('penulis'),
+        'penerbit' => $this->request->getVar('penerbit'),
+        'sampul' => $namaFile
+    ];
+
+    // Debug sebelum menyimpan ke database
+    // dd($data);
+
+    try {
+        $this->bukuModel->save($data);
+        session()->setFlashdata('pesan', 'Data buku berhasil ditambahkan.');
+        return redirect()->to('/books');
+    } catch (\Exception $e) {
+        die($e->getMessage());
+    }
+}
 }
